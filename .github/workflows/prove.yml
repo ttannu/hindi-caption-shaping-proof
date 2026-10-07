@@ -1,0 +1,60 @@
+name: Prove Hindi Caption Shaping on Linux
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download the two public FFmpeg binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            https://registry.npmjs.org/@ffmpeg-installer/linux-x64/-/linux-x64-4.1.0.tgz \
+            -o legacy.tgz
+          tar -xzf legacy.tgz package/ffmpeg
+          mv package/ffmpeg ffmpeg-legacy
+          curl -fL --retry 3 \
+            https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz \
+            -o modern.gz
+          echo 'bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa  modern.gz' | sha256sum -c -
+          gzip -dc modern.gz > ffmpeg-modern
+          echo 'e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  ffmpeg-modern' | sha256sum -c -
+          chmod +x ffmpeg-legacy ffmpeg-modern
+          ./ffmpeg-legacy -hide_banner -version | head -n 1
+          ./ffmpeg-modern -hide_banner -version | head -n 1
+      - name: Render the exact public Hindi test caption as PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in legacy modern; do
+            ./ffmpeg-"$version" -hide_banner -nostdin -loglevel verbose -y \
+              -f lavfi -i 'color=c=0x080c14:s=1080x1920:r=30:d=1' \
+              -vf 'ass=filename=proof.ass:fontsdir=.,select=eq(n\,15)' \
+              -frames:v 1 "$version.png" 2> "$version.log"
+            test -s "$version.png"
+            rg 'Shaper:|fontselect:' "$version.log" || true
+          done
+      - name: Compare title and caption pixels
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          python prove.py
+      - name: Keep a one-day side-by-side PNG
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindi-caption-shaping-${{ github.run_id }}
+          path: shaping-contact.png
+          if-no-files-found: error
+          retention-days: 1
