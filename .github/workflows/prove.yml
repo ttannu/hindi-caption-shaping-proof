@@ -45,7 +45,7 @@ jobs:
               -vf 'ass=filename=proof.ass:fontsdir=.,select=eq(n\,15)' \
               -frames:v 1 "$version.png" 2> "$version.log"
             test -s "$version.png"
-            rg 'Shaper:|fontselect:' "$version.log" || true
+            grep -E 'Shaper:|fontselect:' "$version.log" || true
           done
       - name: Compare title and caption pixels
         run: |
